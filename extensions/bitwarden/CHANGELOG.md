@@ -5,6 +5,10 @@
 - **Security:** Redact master password from error logs so it is never exposed when using "Copy Last Errors" or sharing bug reports (unlock/login failures now store a sanitized message)
 - Fix npm install peer dependency conflict by pinning react-devtools to the version expected by @raycast/api
 
+## [Fix Password Generation] - 2026-02-11
+
+- Fix password generation failing due to values passed to boolean options
+
 ## [Added PasteUsernameAction] - 2026-01-01
 
 ## [Added support for Windows] - 2025-10-15
