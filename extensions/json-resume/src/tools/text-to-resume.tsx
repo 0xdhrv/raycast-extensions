@@ -1,4 +1,4 @@
-import { AI } from "@raycast/api";
+import { AI, Tool } from "@raycast/api";
 import { showToast, Toast, Clipboard } from "@raycast/api";
 import fs from "fs/promises";
 import path from "path";
@@ -141,6 +141,19 @@ Return only the JSON object with the appropriate section; do not include any ext
   }
 }
 
+export const confirmation: Tool.Confirmation<TextToResumeInput> = async (input) => {
+  if (input.outputPath) {
+    return {
+      message: "Convert the text to JSON Resume and save it to a file?",
+      info: [{ name: "Output Path", value: path.resolve(input.outputPath) }],
+    };
+  }
+  return {
+    message: "Convert the text to JSON Resume and copy the result to your clipboard?",
+    info: [{ name: "Clipboard", value: "Current clipboard contents will be replaced" }],
+  };
+};
+
 export default async function textToResume(input: TextToResumeInput): Promise<string> {
   const toast = await showToast({
     style: Toast.Style.Animated,
@@ -154,9 +167,7 @@ export default async function textToResume(input: TextToResumeInput): Promise<st
 
     toast.message = scope === "full" ? "Generating full resume..." : "Generating resume section...";
 
-    const result = await AI.ask(prompt, {
-      model: AI.Model["OpenAI_GPT5-mini"],
-    });
+    const result = await AI.ask(prompt);
 
     // Clean up the result to ensure it's valid JSON
     let cleanedResult = result.trim();
