@@ -3,6 +3,19 @@ import { Root } from "./interfaces";
 
 const API_URL = "https://api.fda.gov/drug/drugsfda.json";
 const PAGE_SIZE = 25; // You can adjust this
+const SEARCH_FIELDS = ["openfda.brand_name", "openfda.generic_name", "products.brand_name"];
+
+/**
+ * Builds an openFDA query that matches the term as a phrase in brand or generic names.
+ * Quotes and backslashes are stripped so user input cannot break out of the phrase.
+ */
+function buildSearchQuery(search: string): string | undefined {
+  const term = search.replace(/["\\]/g, " ").trim().replace(/\s+/g, " ");
+  if (!term) {
+    return undefined;
+  }
+  return SEARCH_FIELDS.map((field) => `${field}:"${term}"`).join(" ");
+}
 
 /**
  * Custom hook for searching the openFDA drug database with pagination.
@@ -19,8 +32,10 @@ export function useDrugSearch(search: string, sort?: string) {
       const params = new URLSearchParams();
 
       // Handle search
-      if (search) {
-        params.append("search", search);
+      const query = buildSearchQuery(search);
+      if (query) {
+        // URLSearchParams encodes spaces as "+", which openFDA treats as OR
+        params.append("search", query);
       }
 
       // Handle sorting
@@ -38,6 +53,17 @@ export function useDrugSearch(search: string, sort?: string) {
       return url;
     },
     {
+      // openFDA responds with 404 NOT_FOUND when nothing matches; treat that as an empty result set
+      async parseResponse(response): Promise<Root> {
+        const json = await response.json().catch(() => undefined);
+        if (response.status === 404 && json?.error?.code === "NOT_FOUND") {
+          return { results: [], meta: { results: { skip: 0, limit: 0, total: 0 } } } as unknown as Root;
+        }
+        if (!response.ok) {
+          throw new Error(json?.error?.message || response.statusText || `Request failed (${response.status})`);
+        }
+        return json as Root;
+      },
       // Always fetch - either search results or all drugs by default
       // mapResult is used to transform the API response into the format useFetch expects
       // for pagination: { data: [], hasMore: boolean }

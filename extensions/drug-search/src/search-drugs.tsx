@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { List, ActionPanel, Action, Color, Icon } from "@raycast/api";
 import { useDrugSearch } from "./useDrugSearch";
-import { DrugDetail } from "./drug-detail";
+import { DrugDetail, drugsAtFdaUrl, fdaApiUrl } from "./drug-detail";
 import { Result } from "./interfaces";
 
 export default function Command() {
@@ -43,6 +43,7 @@ export default function Command() {
           const dosageForm = drug.products[0]?.dosage_form;
           const route = drug.products[0]?.route;
           const sponsor = drug.sponsor_name;
+          const drugsAtFda = drugsAtFdaUrl(drug.application_number);
 
           // Build accessories array, filtering out empty values
           const accessories = [];
@@ -90,10 +91,8 @@ export default function Command() {
               actions={
                 <ActionPanel>
                   <Action.Push title="View Details" target={<DrugDetail drug={drug} />} />
-                  <Action.OpenInBrowser
-                    title="View on FDA API"
-                    url={`https://api.fda.gov/drug/drugsfda.json?search=application_number:"${drug.application_number}"`}
-                  />
+                  {drugsAtFda && <Action.OpenInBrowser title="View on Drugs@FDA" url={drugsAtFda} />}
+                  <Action.OpenInBrowser title="View on FDA API" url={fdaApiUrl(drug.application_number)} />
                   <Action.CopyToClipboard title="Copy Brand Name" content={brandName} />
                   {genericName && <Action.CopyToClipboard title="Copy Generic Name" content={genericName} />}
                 </ActionPanel>

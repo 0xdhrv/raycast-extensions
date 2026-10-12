@@ -1,6 +1,18 @@
 import { Detail, ActionPanel, Action } from "@raycast/api";
 import { Result } from "./interfaces";
 
+/** Drugs@FDA overview page for an application number like "NDA021234", if it has digits. */
+export function drugsAtFdaUrl(applicationNumber?: string): string | undefined {
+  const applNo = applicationNumber?.replace(/\D/g, "");
+  return applNo
+    ? `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=${applNo}`
+    : undefined;
+}
+
+export function fdaApiUrl(applicationNumber: string): string {
+  return `https://api.fda.gov/drug/drugsfda.json?search=${encodeURIComponent(`application_number:"${applicationNumber}"`)}`;
+}
+
 interface DrugDetailProps {
   drug: Result;
 }
@@ -12,6 +24,7 @@ export function DrugDetail({ drug }: DrugDetailProps) {
   const route = drug.products[0]?.route || "N/A";
   const marketingStatus = drug.products[0]?.marketing_status || "N/A";
   const sponsor = drug.sponsor_name || "N/A";
+  const drugsAtFda = drugsAtFdaUrl(drug.application_number);
 
   // Build markdown content
   let markdown = `# ${brandName}\n\n`;
@@ -90,10 +103,8 @@ export function DrugDetail({ drug }: DrugDetailProps) {
       markdown={markdown}
       actions={
         <ActionPanel>
-          <Action.OpenInBrowser
-            title="View on FDA API"
-            url={`https://api.fda.gov/drug/drugsfda.json?search=application_number:"${drug.application_number}"`}
-          />
+          {drugsAtFda && <Action.OpenInBrowser title="View on Drugs@FDA" url={drugsAtFda} />}
+          <Action.OpenInBrowser title="View on FDA API" url={fdaApiUrl(drug.application_number)} />
           <Action.CopyToClipboard title="Copy Application Number" content={drug.application_number} />
           <Action.CopyToClipboard title="Copy Brand Name" content={brandName} />
           {genericName !== "N/A" && <Action.CopyToClipboard title="Copy Generic Name" content={genericName} />}
