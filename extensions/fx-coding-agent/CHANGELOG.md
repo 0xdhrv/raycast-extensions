@@ -1,5 +1,10 @@
 # Fx Coding Agent Changelog
 
+## [Cancel running Ask Fx] - {PR_MERGE_DATE}
+
+- Added a Cancel action to Ask Fx that stops the running fx request.
+- Leaving the Ask Fx result view now stops fx instead of letting it keep running in the background.
+
 ## [Initial Version] - 2026-08-24
 
 - Added complete saved conversation history to session details, including every user and fx turn plus compact tool activity.

@@ -165,16 +165,18 @@ export type FxAskResponse = {
 type RunOptions = {
   cwd?: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 const DEFAULT_TIMEOUT_MS = 20_000;
+const KILL_GRACE_PERIOD_MS = 3_000;
 export const FX_INSTALL_COMMAND = "curl -fsSL https://fx.sh/setup.sh | bash";
 export const FX_INSTALLATION_URL = "https://fx.sh/docs/getting-started/installation";
 
 export class FxCommandError extends Error {
   constructor(
     message: string,
-    readonly kind: "not-installed" | "failed" | "timeout",
+    readonly kind: "not-installed" | "failed" | "timeout" | "cancelled",
     readonly stdout = "",
   ) {
     super(message);
@@ -220,23 +222,50 @@ export function runFx(executable: string, args: string[], options: RunOptions = 
       reject(new FxCommandError(`The workspace does not exist or is not a directory: ${cwd}`, "failed"));
       return;
     }
+    if (options.signal?.aborted) {
+      reject(new FxCommandError("The fx request was cancelled.", "cancelled"));
+      return;
+    }
     const child = spawn(executable, args, {
       cwd,
       env: commandEnvironment(),
       shell: false,
       windowsHide: true,
+      // Run fx in its own process group so cancelling also stops the commands it started.
+      detached: true,
     });
+    const killGroup = (signal: NodeJS.Signals) => {
+      try {
+        if (child.pid) process.kill(-child.pid, signal);
+        else child.kill(signal);
+      } catch {
+        child.kill(signal);
+      }
+    };
     let stdout = "";
     let stderr = "";
     let settled = false;
 
     const timer = setTimeout(() => {
-      child.kill();
+      killGroup("SIGTERM");
       if (!settled) {
         settled = true;
         reject(new FxCommandError("fx did not respond before the command timed out.", "timeout", stdout));
       }
     }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      killGroup("SIGTERM");
+      setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) killGroup("SIGKILL");
+      }, KILL_GRACE_PERIOD_MS).unref();
+      if (!settled) {
+        settled = true;
+        reject(new FxCommandError("The fx request was cancelled.", "cancelled"));
+      }
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -244,6 +273,7 @@ export function runFx(executable: string, args: string[], options: RunOptions = 
     child.stderr.on("data", (chunk: string) => (stderr += chunk));
     child.on("error", (error) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       if (settled) return;
       settled = true;
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -259,6 +289,7 @@ export function runFx(executable: string, args: string[], options: RunOptions = 
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       if (settled) return;
       settled = true;
       if (code === 0) resolve(stdout);
@@ -272,7 +303,7 @@ export async function runFxJson<T>(executable: string, args: string[], options: 
   try {
     output = await runFx(executable, args, options);
   } catch (error) {
-    if (!(error instanceof FxCommandError) || !error.stdout.trim()) throw error;
+    if (!(error instanceof FxCommandError) || error.kind === "cancelled" || !error.stdout.trim()) throw error;
     output = error.stdout;
   }
 

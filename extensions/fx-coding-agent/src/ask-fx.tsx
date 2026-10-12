@@ -1,8 +1,9 @@
-import { Action, ActionPanel, Detail, Form, Icon, LaunchProps, useNavigation } from "@raycast/api";
-import { FormValidation, useForm, usePromise } from "@raycast/utils";
+import { Action, ActionPanel, Detail, Form, Icon, LaunchProps, showToast, Toast, useNavigation } from "@raycast/api";
+import { FormValidation, showFailureToast, useForm, usePromise } from "@raycast/utils";
+import { useRef } from "react";
 
 import { FxErrorActions } from "./components/fx-error-actions";
-import { FxAskResponse, defaultWorkingDirectory, getFxPreferences, runFxJson } from "./lib/fx";
+import { FxAskResponse, FxCommandError, defaultWorkingDirectory, getFxPreferences, runFxJson } from "./lib/fx";
 
 type Arguments = {
   prompt?: string;
@@ -24,18 +25,30 @@ function AskResult({
   resumeSessionId?: string;
 }) {
   const { fxPath } = getFxPreferences();
+  const abortable = useRef<AbortController>(null);
   const { data, error, isLoading, revalidate } = usePromise(
     async () => {
       const args = ["ask", "--json"];
       if (resumeSessionId) args.push("--resume", resumeSessionId);
       args.push(prompt);
-      return runFxJson<FxAskResponse>(fxPath, args, { cwd: workspace, timeoutMs: 30 * 60 * 1000 });
+      return runFxJson<FxAskResponse>(fxPath, args, {
+        cwd: workspace,
+        timeoutMs: 30 * 60 * 1000,
+        signal: abortable.current?.signal,
+      });
     },
     [],
-    { failureToastOptions: { title: "Could Not Ask fx" } },
+    {
+      abortable,
+      onError(error) {
+        if (isCancelled(error)) showToast({ style: Toast.Style.Success, title: "Cancelled fx Request" });
+        else showFailureToast(error, { title: "Could Not Ask fx" });
+      },
+    },
   );
 
-  const output = data?.output || data?.error || (error ? `# Could Not Ask fx\n\n${error.message}` : "");
+  const errorTitle = isCancelled(error) ? "Cancelled fx Request" : "Could Not Ask fx";
+  const output = data?.output || data?.error || (error ? `# ${errorTitle}\n\n${error.message}` : "");
   return (
     <Detail
       isLoading={isLoading}
@@ -65,10 +78,23 @@ function AskResult({
             {data.session_id ? <Action.CopyToClipboard title="Copy Session ID" content={data.session_id} /> : null}
             <Action title="Run Again" icon={Icon.ArrowClockwise} onAction={revalidate} />
           </ActionPanel>
+        ) : isLoading ? (
+          <ActionPanel>
+            <Action
+              title="Cancel"
+              icon={Icon.XMarkCircle}
+              style={Action.Style.Destructive}
+              onAction={() => abortable.current?.abort()}
+            />
+          </ActionPanel>
         ) : undefined
       }
     />
   );
+}
+
+function isCancelled(error: unknown): boolean {
+  return error instanceof FxCommandError && error.kind === "cancelled";
 }
 
 export default function Command(props: LaunchProps<{ arguments: Arguments }>) {
