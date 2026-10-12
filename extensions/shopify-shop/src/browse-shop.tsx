@@ -3,7 +3,7 @@ import { ActionPanel, Action, Icon, Grid, Color, getPreferenceValues, showToast,
 import { useFetch, useLocalStorage } from "@raycast/utils";
 import type { Product } from "./types";
 import ProductDetail from "./product-detail";
-import { buildStoreOrigin } from "./services/shopify-api";
+import { buildProductPageUrl, buildStoreOrigin } from "./services/shopify-api";
 import { formatPrice, normalizeTags } from "./services/product-mapper";
 import { useSearchSuggest, useStoreMeta } from "./services/hooks";
 
@@ -46,28 +46,43 @@ export default function Command() {
 
   const searchSuggest = useSearchSuggest(storeUrl, searchText, ["product"], searchText.length >= 2, storeCurrency);
 
-  const productsUrl = collectionHandle
-    ? `${storeOrigin}/collections/${collectionHandle}/products.json?currency=${storeCurrency || "USD"}`
-    : `${storeOrigin}/products.json?currency=${storeCurrency || "USD"}`;
+  const PAGE_SIZE = 250;
+  const productsPath = collectionHandle
+    ? `${storeOrigin}/collections/${collectionHandle}/products.json`
+    : `${storeOrigin}/products.json`;
+  const currencyParam = storeCurrency ? `&currency=${storeCurrency}` : "";
 
-  const response = useFetch<ShopifyResponse | null>(productsUrl, {
-    parseResponse: async (res: FetchResponse) => {
-      if (!res.ok) {
-        throw new Error(`Failed to load products (${res.status})`);
-      }
-      try {
-        const json = await res.json();
-        return json as ShopifyResponse;
-      } catch {
-        throw new Error("Store returned an invalid products response");
-      }
+  const response = useFetch(
+    (options: { page: number }) => `${productsPath}?limit=${PAGE_SIZE}&page=${options.page + 1}${currencyParam}`,
+    {
+      parseResponse: async (res: FetchResponse) => {
+        if (!res.ok) {
+          throw new Error(`Failed to load products (${res.status})`);
+        }
+        try {
+          const json = await res.json();
+          return json as ShopifyResponse;
+        } catch {
+          throw new Error("Store returned an invalid products response");
+        }
+      },
+      mapResult: (result: ShopifyResponse) => {
+        const pageProducts = Array.isArray(result?.products)
+          ? result.products
+          : result?.product
+            ? [result.product]
+            : [];
+        return { data: pageProducts, hasMore: pageProducts.length === PAGE_SIZE };
+      },
+      keepPreviousData: true,
+      // Wait for store metadata so the currency is known before the first request (avoids a double fetch).
+      execute: !storeMetaResp.isLoading && (!searchText || searchText.length < 2),
     },
-    keepPreviousData: true,
-    execute: !searchText || searchText.length < 2,
-  });
+  );
 
   const isLoadingFromFetch = response.isLoading || searchSuggest.isLoading || storeMetaResp.isLoading;
   const resp = response.data ?? null;
+  const isSearching = searchText.length >= 2;
   const hasError = Boolean(response.error || searchSuggest.error || storeMetaResp.error || collectionsResp.error);
   const isLoading = isLoadingFromFetch || (resp === null && !searchSuggest.data && !hasError);
   const errorMessage =
@@ -123,10 +138,8 @@ export default function Command() {
         },
       ],
     }));
-  } else if (resp?.products && Array.isArray(resp.products)) {
-    products = resp.products;
-  } else if (resp?.product) {
-    products = [resp.product];
+  } else if (resp) {
+    products = resp;
   }
 
   async function handleSelectCollection(handle: string | null) {
@@ -143,6 +156,7 @@ export default function Command() {
       columns={columns}
       inset={Grid.Inset.Large}
       isLoading={isLoading}
+      pagination={isSearching ? undefined : response.pagination}
       onSearchTextChange={setSearchText}
       searchBarPlaceholder="Search products..."
       searchText={searchText}
@@ -174,8 +188,8 @@ export default function Command() {
       }
     >
       {!isLoading && errorMessage && <Grid.EmptyView title="Could Not Load Products" description={errorMessage} />}
-      {!isLoading &&
-        !errorMessage &&
+      {/* Keep rendered items while loading so infinite scroll doesn't blank the grid between pages. */}
+      {!errorMessage &&
         products.map((p, index) => {
           const key = p.id ?? p.handle ?? p.title ?? `missing-${index}`;
           const firstImage = p.images && p.images.length > 0 ? p.images[0].src : undefined;
@@ -202,7 +216,11 @@ export default function Command() {
                     shortcut={{ modifiers: ["cmd"], key: "o" }}
                     target={<ProductDetail handle={p.handle ?? ""} baseUrl={storeUrl} />}
                   />
-                  <Action.CopyToClipboard content={p.handle ?? ""} shortcut={{ modifiers: ["cmd"], key: "c" }} />
+                  <Action.CopyToClipboard
+                    title="Copy Product URL"
+                    content={buildProductPageUrl(storeUrl, p.handle)}
+                    shortcut={{ modifiers: ["cmd"], key: "c" }}
+                  />
                 </ActionPanel>
               }
             />
