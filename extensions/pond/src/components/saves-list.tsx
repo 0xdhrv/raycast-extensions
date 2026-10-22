@@ -10,6 +10,7 @@ import { useQuickLook } from "../lib/files";
 import { ALL_SAVES, decodeFilter, encodeFilter, type Filter, groupsByDay, queryFor } from "../lib/filters";
 import { useLookups, useSources, useViews } from "../lib/library";
 import { LIBRARY_LINK, searchLink } from "../lib/links";
+import { uniqueById } from "../lib/pages";
 import { recentlyOpened } from "../lib/recent";
 import { thumbnailKey, useThumbnails } from "../lib/thumbnails";
 import { FilterDropdown, filterTitle } from "./filter-dropdown";
@@ -78,7 +79,7 @@ export function SavesList({ filter: pinned, navigationTitle, searchText: initial
   const showRecents = !pinned && filter.kind === "all" && !keywords;
   const recents = useCachedPromise(recentlyOpened, [], { execute: showRecents, onError: () => undefined });
   const recentSaves = (showRecents && recents.data) || NONE;
-  const data = saves.data ?? NONE;
+  const data = useMemo(() => uniqueById(saves.data ?? NONE), [saves.data]);
 
   const all = useMemo(() => [...recentSaves, ...data], [recentSaves, data]);
   const icons = useThumbnails(all, "small");

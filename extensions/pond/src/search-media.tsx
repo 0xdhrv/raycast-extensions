@@ -12,6 +12,7 @@ import { saveEditor } from "./lib/edits";
 import { useQuickLook } from "./lib/files";
 import { decodeFilter, encodeFilter, type Filter, queryFor } from "./lib/filters";
 import { useLookups } from "./lib/library";
+import { uniqueById } from "./lib/pages";
 import { thumbnailKey, useThumbnails } from "./lib/thumbnails";
 
 interface MediaPreferences {
@@ -46,7 +47,7 @@ export default function Command(props: LaunchProps) {
   const filter: Filter = decoded.kind === "media" ? decoded : { kind: "media", types: TYPES[0].types };
   const input = queryFor(filter, searchText, []);
   const media = useCachedPromise(loadMedia, [input], { keepPreviousData: true });
-  const data = media.data ?? NONE;
+  const data = useMemo(() => uniqueById(media.data ?? NONE), [media.data]);
   const thumbnails = useThumbnails(data, "medium");
   const selected = data.find((save) => save.id === selectedId) ?? data[0];
   const quickLook = useQuickLook(selected);

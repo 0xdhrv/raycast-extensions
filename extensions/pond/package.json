@@ -298,7 +298,7 @@
   "dependencies": {
     "@raycast/api": "^2.8.0",
     "@raycast/utils": "^2.3.2",
-    "pond-api": "^0.2.0",
+    "pond-api": "^0.2.1",
     "react": "19.0.0"
   },
   "devDependencies": {
